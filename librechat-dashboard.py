@@ -684,7 +684,7 @@ class LibreChatDashboard(QMainWindow):
                 pass  # Could fetch initial logs here if needed
     
     def init_ui(self):
-        self.setWindowTitle("LibreChat Control Panel - Dashboard")
+        self.setWindowTitle("LibreChat Dashboard")
         self.setGeometry(100, 100, 1200, 900)
         
         # Set window icon
@@ -910,7 +910,7 @@ class LibreChatDashboard(QMainWindow):
     
     def show_about(self):
         about_text = """
-<h2>LibreChat Control Panel Dashboard</h2>
+<h2>LibreChat Dashboard</h2>
 <p>Version 3.0</p>
 
 <p>A modern dashboard for managing LibreChat services with real-time monitoring.</p>
