@@ -215,9 +215,6 @@ nano requirements.lite.txt
 # Install lite dependencies (saves ~7GB compared to full requirements)
 pip install -r requirements.lite.txt
 
-# If tiktoken fails to build:
-pip install tiktoken --no-build-isolation
-
 # Note: If you move rag_api directory after creating venv, you'll need to rebuild it
 # as virtual environments have hardcoded paths
 
