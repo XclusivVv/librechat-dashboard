@@ -18,9 +18,83 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QTextEdit, QScrollArea, QMessageBox,
     QTabWidget, QGridLayout, QFrame, QProgressBar, QGroupBox
 )
-from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal, QUrl
 from PyQt6.QtGui import QFont, QTextCursor, QPalette, QColor, QIcon
 from PyQt6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+
+
+class PgAdminManager(QThread):
+    """Manage pgAdmin4 process"""
+    status_updated = pyqtSignal(bool, str)  # is_running, url
+    output_ready = pyqtSignal(str)
+    
+    def __init__(self):
+        super().__init__()
+        self.process = None
+        self.running = False
+        self.pgadmin_url = None
+    
+    def run(self):
+        """Start pgAdmin4"""
+        pgadmin_path = Path.home() / '.local' / 'src' / 'pgadmin'
+        venv_python = pgadmin_path / 'bin' / 'python'
+        pgadmin_script = pgadmin_path / 'bin' / 'pgadmin4'
+        
+        if not pgadmin_script.exists():
+            self.output_ready.emit(f"Error: pgAdmin not found at {pgadmin_script}\n")
+            self.output_ready.emit("Install with: cd ~/.local/src/pgadmin && source bin/activate && pip install pgadmin4\n")
+            self.status_updated.emit(False, "")
+            return
+        
+        try:
+            self.process = subprocess.Popen(
+                [str(pgadmin_script)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=str(pgadmin_path)
+            )
+            
+            self.running = True
+            
+            # Wait for pgAdmin to start and find the URL
+            for line in self.process.stdout:
+                self.output_ready.emit(line)
+                
+                # Look for the server URL in output
+                if 'http' in line.lower() and ('127.0.0.1' in line or 'localhost' in line):
+                    # Extract URL from line
+                    import re
+                    url_match = re.search(r'http://[^\s]+', line)
+                    if url_match:
+                        self.pgadmin_url = url_match.group(0).rstrip('/')
+                    else:
+                        self.pgadmin_url = "http://127.0.0.1:5050"
+                    self.status_updated.emit(True, self.pgadmin_url)
+                
+                if not self.running:
+                    break
+            
+            self.process.wait()
+            self.running = False
+            self.status_updated.emit(False, "")
+            
+        except Exception as e:
+            self.output_ready.emit(f"Error starting pgAdmin: {str(e)}\n")
+            self.running = False
+            self.status_updated.emit(False, "")
+    
+    def stop(self):
+        """Stop pgAdmin4"""
+        self.running = False
+        if self.process:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
 
 
 class SystemMonitor(QThread):
@@ -663,6 +737,167 @@ class LogsTab(QWidget):
         self.log_output.moveCursor(QTextCursor.MoveOperation.End)
 
 
+class PgAdminTab(QWidget):
+    """pgAdmin database management tab"""
+    
+    def __init__(self):
+        super().__init__()
+        self.pgadmin_manager = None
+        self.init_ui()
+    
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.setContentsMargins(5, 5, 5, 5)  # Reduce margins
+        layout.setSpacing(5)  # Reduce spacing
+        
+        # Header with controls
+        header_layout = QHBoxLayout()
+        
+        label = QLabel("RAG Database Management (pgAdmin 4)")
+        label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        header_layout.addWidget(label)
+        
+        header_layout.addStretch()
+        
+        self.start_btn = QPushButton("Start pgAdmin")
+        self.start_btn.clicked.connect(self.start_pgadmin)
+        header_layout.addWidget(self.start_btn)
+        
+        self.stop_btn = QPushButton("Stop pgAdmin")
+        self.stop_btn.clicked.connect(self.stop_pgadmin)
+        self.stop_btn.setEnabled(False)
+        header_layout.addWidget(self.stop_btn)
+        
+        self.open_browser_btn = QPushButton("Open in Browser")
+        self.open_browser_btn.clicked.connect(self.open_in_browser)
+        self.open_browser_btn.setEnabled(False)
+        header_layout.addWidget(self.open_browser_btn)
+        
+        layout.addLayout(header_layout)
+        
+        # Status row with connection info button
+        status_row = QHBoxLayout()
+        
+        self.status_label = QLabel("Status: Not Running")
+        self.status_label.setStyleSheet("color: #888888; font-weight: bold; font-size: 10px;")
+        status_row.addWidget(self.status_label)
+        
+        status_row.addStretch()
+        
+        # Connection info button
+        info_btn = QPushButton("Details")
+        info_btn.setMaximumWidth(80)
+        info_btn.clicked.connect(self.show_connection_info)
+        status_row.addWidget(info_btn)
+        
+        layout.addLayout(status_row)
+        
+        # Web view for embedded pgAdmin (much larger)
+        self.web_view = QWebEngineView()
+        self.web_view.setUrl(QUrl("about:blank"))
+        self.web_view.setMinimumHeight(600)  # Bigger minimum height
+        layout.addWidget(self.web_view, stretch=10)  # Give it most of the space
+        
+        # Console output (smaller)
+        console_label = QLabel("Console:")
+        console_label.setStyleSheet("font-size: 9px;")
+        layout.addWidget(console_label)
+        
+        self.console_output = QTextEdit()
+        self.console_output.setReadOnly(True)
+        self.console_output.setMaximumHeight(100)  # Smaller console
+        self.console_output.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                font-family: 'Courier New', monospace;
+                font-size: 8px;
+            }
+        """)
+        layout.addWidget(self.console_output)
+        
+        self.setLayout(layout)
+    
+    def show_connection_info(self):
+        """Show connection information popup"""
+        info_text = """
+<h3>pgAdmin Login</h3>
+<p>Email: <b>admin@local.host</b><br>
+Password: <b>admin@local.host</b></p>
+
+<h3>PostgreSQL RAG Database</h3>
+<p>Host: <b>localhost</b><br>
+Port: <b>5432</b><br>
+Database: <b>ragdb</b><br>
+Username: <b>raguser</b><br>
+Password: <b>ragpassword</b></p>
+        """
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Connection Information")
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(info_text)
+        msg.exec()
+    
+    def start_pgadmin(self):
+        """Start pgAdmin server"""
+        if self.pgadmin_manager and self.pgadmin_manager.isRunning():
+            QMessageBox.warning(self, "Already Running", "pgAdmin is already running")
+            return
+        
+        self.pgadmin_manager = PgAdminManager()
+        self.pgadmin_manager.status_updated.connect(self.on_status_updated)
+        self.pgadmin_manager.output_ready.connect(self.append_console)
+        self.pgadmin_manager.start()
+        
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.append_console("Starting pgAdmin 4...\n")
+    
+    def stop_pgadmin(self):
+        """Stop pgAdmin server"""
+        if self.pgadmin_manager:
+            self.pgadmin_manager.stop()
+            self.pgadmin_manager.wait()
+            self.append_console("pgAdmin stopped\n")
+        
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.open_browser_btn.setEnabled(False)
+        self.status_label.setText("Status: Not Running")
+        self.status_label.setStyleSheet("color: #888888; font-weight: bold;")
+        self.web_view.setUrl(QUrl("about:blank"))
+    
+    def on_status_updated(self, is_running, url):
+        """Handle pgAdmin status updates"""
+        if is_running and url:
+            self.status_label.setText(f"Status: Running at {url}")
+            self.status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+            self.open_browser_btn.setEnabled(True)
+            
+            # Load pgAdmin in web view
+            QTimer.singleShot(3000, lambda: self.web_view.setUrl(QUrl(url)))
+        else:
+            self.status_label.setText("Status: Not Running")
+            self.status_label.setStyleSheet("color: #888888; font-weight: bold;")
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.open_browser_btn.setEnabled(False)
+    
+    def open_in_browser(self):
+        """Open pgAdmin in external browser"""
+        if self.pgadmin_manager and self.pgadmin_manager.pgadmin_url:
+            try:
+                subprocess.Popen(['xdg-open', self.pgadmin_manager.pgadmin_url])
+            except:
+                QMessageBox.warning(self, "Error", "Could not open browser")
+    
+    def append_console(self, text):
+        """Append text to console output"""
+        self.console_output.moveCursor(QTextCursor.MoveOperation.End)
+        self.console_output.insertPlainText(text)
+        self.console_output.moveCursor(QTextCursor.MoveOperation.End)
+
+
 class LibreChatDashboard(QMainWindow):
     """Main dashboard window"""
     
@@ -758,6 +993,9 @@ class LibreChatDashboard(QMainWindow):
         
         self.logs_tab = LogsTab()
         self.tabs.addTab(self.logs_tab, "Logs")
+        
+        self.pgadmin_tab = PgAdminTab()
+        self.tabs.addTab(self.pgadmin_tab, "RAG DB Management")
         
         main_layout.addWidget(self.tabs)
         
@@ -973,6 +1211,12 @@ class LibreChatDashboard(QMainWindow):
             self.service_monitor.stop()
             self.service_monitor.quit()
             self.service_monitor.wait()
+        
+        # Stop pgAdmin if running
+        if hasattr(self, 'pgadmin_tab') and self.pgadmin_tab.pgadmin_manager:
+            if self.pgadmin_tab.pgadmin_manager.isRunning():
+                self.pgadmin_tab.pgadmin_manager.stop()
+                self.pgadmin_tab.pgadmin_manager.wait()
         
         event.accept()
 

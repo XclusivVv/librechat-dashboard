@@ -6,7 +6,7 @@ echo ""
 # Check if running on Arch-based system
 if ! command -v pacman &> /dev/null; then
     echo "Warning: This installer is designed for Arch-based systems (CachyOS, Manjaro, etc.)"
-    echo "You may need to manually install: PyQt6, PyQt6-Charts, and python-psutil"
+    echo "You may need to manually install: PyQt6, PyQt6-Charts, PyQt6-WebEngine, and python-psutil"
     echo ""
 fi
 
@@ -22,6 +22,10 @@ fi
 
 if ! python -c "from PyQt6.QtCharts import QChart" 2>/dev/null; then
     packages_to_install+=("python-pyqt6-charts")
+fi
+
+if ! python -c "from PyQt6.QtWebEngineWidgets import QWebEngineView" 2>/dev/null; then
+    packages_to_install+=("python-pyqt6-webengine")
 fi
 
 if ! python -c "import psutil" 2>/dev/null; then
@@ -55,6 +59,13 @@ else
     echo "✓ PyQt6-Charts installed"
 fi
 
+if ! python -c "from PyQt6.QtWebEngineWidgets import QWebEngineView" 2>/dev/null; then
+    echo "✗ PyQt6-WebEngine installation failed"
+    all_ok=false
+else
+    echo "✓ PyQt6-WebEngine installed"
+fi
+
 if ! python -c "import psutil" 2>/dev/null; then
     echo "✗ python-psutil installation failed"
     all_ok=false
@@ -66,7 +77,7 @@ echo ""
 
 if [ "$all_ok" = false ]; then
     echo "Some dependencies failed to install. Please install manually:"
-    echo "  sudo pacman -S python-pyqt6 python-pyqt6-charts python-psutil"
+    echo "  sudo pacman -S python-pyqt6 python-pyqt6-charts python-pyqt6-webengine python-psutil"
     exit 1
 fi
 
@@ -114,6 +125,7 @@ echo "LibreChat Dashboard Features:"
 echo "  • Dashboard Tab - Service cards with real-time stats"
 echo "  • Monitoring Tab - CPU/RAM graphs (60s history)"
 echo "  • Logs Tab - Consolidated logs from all services"
+echo "  • pgAdmin Tab - Embedded database management"
 echo "  • One-click service management"
 echo "  • System resource monitoring"
 echo ""

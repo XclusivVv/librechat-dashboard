@@ -247,6 +247,50 @@ RAG_PORT=8000
 DEBUG_RAG_API=True
 ```
 
+### 6.1. pgAdmin 4 (Optional - Database Management Tool)
+
+pgAdmin provides a GUI for managing PostgreSQL databases, including inspecting RAG embeddings.
+
+```bash
+# Create directory for pgAdmin
+mkdir -p ~/.local/src/pgadmin
+cd ~/.local/src/pgadmin
+
+# Create data directories
+sudo mkdir -p /var/lib/pgadmin
+sudo mkdir -p /var/log/pgadmin
+sudo chown $USER /var/lib/pgadmin
+sudo chown $USER /var/log/pgadmin
+
+# Create Python virtual environment
+python -m venv .
+source bin/activate
+
+# Install pgAdmin4
+pip install pgadmin4
+
+# pgAdmin will be accessible at http://127.0.0.1:5050
+# Default credentials (set by dashboard):
+#   Email: admin@local.host
+#   Password: admin@local.host
+```
+
+**Note:** The dashboard includes an embedded pgAdmin tab for easy database access. You can also run it manually:
+
+```bash
+cd ~/.local/src/pgadmin
+source bin/activate
+python -m pgadmin4
+# Then open http://127.0.0.1:5050 in your browser
+```
+
+To connect to the RAG database in pgAdmin:
+- Host: localhost
+- Port: 5432
+- Database: ragdb
+- Username: raguser
+- Password: ragpassword
+
 ---
 
 ## LibreChat Installation
@@ -374,6 +418,7 @@ The installer will:
 - ✅ **Dashboard Tab** - Service cards with real-time CPU/RAM usage and system overview
 - ✅ **Monitoring Tab** - Live CPU and RAM usage graphs (60-second history)
 - ✅ **Logs Tab** - Consolidated logs from all services in one place
+- ✅ **pgAdmin Tab** - Embedded PostgreSQL database management for inspecting RAG embeddings
 - ✅ **Real-time status indicators** - Green/red/gray dots show service status
 - ✅ **One-click controls** - Start/stop individual services or everything at once
 - ✅ **Resource monitoring** - See which services are using resources
@@ -568,37 +613,82 @@ npm run backend                   # Start backend
 
 ## Using RAG Features
 
+### How to Enable RAG File Search in LibreChat
+
+**IMPORTANT:** Regular file uploads ("Upload as Text" or "Upload to Provider") do NOT use RAG! They only load files into the conversation context temporarily.
+
+**To use RAG properly:**
+
+1. In the chat interface, locate the **Tools** dropdown (next to the paperclip/attachment icon)
+2. **Toggle "File Search" ON**
+3. Now click the attachment icon - you'll see **"Upload for File Search"** option
+4. Select **"Upload for File Search"** (NOT "Upload as Text")
+5. Upload your document
+
+The file will be:
+- Sent to RAG API's `/embed` endpoint
+- Processed into chunks
+- Embedded using Ollama's nomic-embed-text model
+- Stored permanently in PostgreSQL
+
+You can verify RAG storage in pgAdmin or psql:
+```sql
+SELECT COUNT(*) FROM langchain_pg_embedding;
+```
+
+Files uploaded via "File Search" have a different icon in the "Manage Files" sidebar.
+
 ### How RAG Works vs Regular File Upload
 
-**Regular File Upload (Built-in):**
+**Regular File Upload ("Upload as Text"):**
+- Uses RAG API's `/text` endpoint to extract text
 - Loads entire file into conversation context
 - Limited by model's context window (~32k-200k tokens)
 - File contents only available in current conversation
+- Temporary - not stored in vector database
 
-**RAG (Retrieval):**
+**RAG ("Upload for File Search"):**
+- Uses RAG API's `/embed` endpoint
 - File processed into chunks and embedded in vector database
-- Only retrieves relevant chunks when needed
+- Only retrieves relevant chunks when needed via `/query` endpoint
 - Works across all conversations
 - Can handle massive document collections
-
-### Testing RAG
-
-1. Upload a document in LibreChat
-2. Check RAG API terminal - you should see "POST /text - 200"
-3. Ask questions about the document content
-4. The AI retrieves relevant information from the vector database
+- Persistent - stored in PostgreSQL forever
 
 ### Managing RAG Documents
 
 Documents are stored persistently in PostgreSQL. To view or manage:
 
+**Using pgAdmin (GUI):**
+1. Open the pgAdmin tab in the dashboard
+2. Start pgAdmin
+3. Connect to Server:
+   - Host: localhost
+   - Port: 5432
+   - Database: ragdb
+   - Username: raguser
+   - Password: ragpassword
+4. Browse tables: `langchain_pg_collection` and `langchain_pg_embedding`
+
+**Using psql (Command Line):**
 ```bash
 # Connect to RAG database
 psql -U raguser -d ragdb -h localhost
 # Password: ragpassword
 
-# List all document collections
-\dt
+# View all embedded documents
+SELECT 
+    cmetadata->>'file_id' as file_id,
+    cmetadata->>'source' as source_file,
+    LEFT(document, 100) as preview
+FROM langchain_pg_embedding;
+
+# Count total embeddings
+SELECT COUNT(*) FROM langchain_pg_embedding;
+
+# Delete specific file embeddings
+DELETE FROM langchain_pg_embedding 
+WHERE cmetadata->>'file_id' = 'your-file-id';
 
 # Exit
 \q
