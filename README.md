@@ -711,5 +711,3 @@ WHERE cmetadata->>'file_id' = 'your-file-id';
 This project is not open source.
 Redistribution, re hosting, or republication is prohibited.
 See the LICENSE file for details.
-
-This project is licensed under the MIT License. See the LICENSE file for details.
