@@ -1,4 +1,8 @@
 #!/bin/bash
+# Copyright (c) 2026 <your name or handle>
+# SPDX-License-Identifier: MIT
+#
+# See the LICENSE file in the project root for full license text.
 
 echo "Installing LibreChat Dashboard..."
 echo ""
