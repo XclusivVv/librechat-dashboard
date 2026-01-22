@@ -1,8 +1,10 @@
 #!/bin/bash
-# Copyright (c) 2026 <your name or handle>
-# SPDX-License-Identifier: MIT
+
+# Copyright (c) 2026 XclusivVv
+# All rights reserved.
 #
-# See the LICENSE file in the project root for full license text.
+# Redistribution, re hosting, or republication is prohibited.
+# See the LICENSE file in the project root for details.
 
 echo "Installing LibreChat Dashboard..."
 echo ""
