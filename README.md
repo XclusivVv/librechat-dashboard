@@ -705,3 +705,9 @@ WHERE cmetadata->>'file_id' = 'your-file-id';
 - [Python](https://www.python.org/) 3.11+
 - [NodeJS](https://github.com/nodejs/node) 22+
 - [CachyOS](https://cachyos.org) - Arch Linux derivative
+
+## License
+
+Copyright (c) 2026 <your name or handle>
+
+This project is licensed under the MIT License. See the LICENSE file for details.
